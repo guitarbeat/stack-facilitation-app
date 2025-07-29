@@ -1,0 +1,61 @@
+# Fly.io deployment configuration for Stack Facilitation App
+app = "stack-facilitation"
+primary_region = "sea"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3001"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 800
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+[machine]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[statics]]
+  guest_path = "/app/static"
+  url_prefix = "/static/"
+
+[deploy]
+  release_command = "npx prisma migrate deploy"
+
+# Database configuration
+[[services]]
+  protocol = "tcp"
+  internal_port = 5432
+
+  [[services.ports]]
+    port = 5432
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+# Environment variables (set via fly secrets)
+# fly secrets set DATABASE_URL="postgresql://..."
+# fly secrets set SESSION_SECRET="your-secret-key"
+# fly secrets set CORS_ORIGIN="https://your-domain.fly.dev"
+
