@@ -63,6 +63,11 @@ fastify.register(async function (fastify) {
   });
 });
 
+// Health check endpoint
+fastify.get('/health', async (request, reply) => {
+  return { status: 'ok', timestamp: new Date().toISOString() };
+});
+
 // Register API routes
 await fastify.register(meetingRoutes, { prefix: '/api/meetings' });
 await fastify.register(userRoutes, { prefix: '/api/users' });

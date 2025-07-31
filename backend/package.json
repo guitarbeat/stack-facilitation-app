@@ -9,9 +9,12 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest",
-    "test:watch": "vitest --watch",
-    "test:coverage": "vitest --coverage",
     "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "ts-node --esm prisma/seed.ts",
@@ -50,6 +53,7 @@
     "nodemon": "^3.0.1",
     "supertest": "^7.1.4",
     "ts-node": "^10.9.1",
+    "tsx": "^4.6.0",
     "typescript": "^5.2.2",
     "vitest": "^3.2.4"
   }
