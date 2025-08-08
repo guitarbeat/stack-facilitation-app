@@ -1,151 +1,261 @@
 import { useState, useEffect } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
-import { Hand, MessageCircle, Info, Settings, LogOut, Users } from 'lucide-react'
+import { Hand, MessageCircle, Info, Settings, LogOut, Users, Loader2 } from 'lucide-react'
+import socketService from '../services/socket'
 
 function MeetingRoom() {
   const { meetingId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { participantName } = location.state || {}
+  const { participantName, meetingInfo } = location.state || {}
   
-  const [meetingData, setMeetingData] = useState({
-    name: 'Weekly Team Meeting',
-    facilitator: 'Alex Johnson',
-    participants: 8,
-    currentSpeaker: null
+  const [meetingData, setMeetingData] = useState(meetingInfo || {
+    code: meetingId,
+    title: 'Loading...',
+    facilitator: 'Loading...'
   })
   
-  const [speakingQueue, setSpeakingQueue] = useState([
-    { id: 1, name: 'Sarah Chen', type: 'speak', timestamp: Date.now() - 30000 },
-    { id: 2, name: 'Mike Rodriguez', type: 'direct', subtype: 'clarification', timestamp: Date.now() - 15000 },
-    { id: 3, name: 'Emma Thompson', type: 'speak', timestamp: Date.now() - 5000 }
-  ])
-  
+  const [participants, setParticipants] = useState([])
+  const [speakingQueue, setSpeakingQueue] = useState([])
   const [isInQueue, setIsInQueue] = useState(false)
   const [showDirectOptions, setShowDirectOptions] = useState(false)
+  const [isConnected, setIsConnected] = useState(false)
+  const [error, setError] = useState('')
+  const [currentSpeaker, setCurrentSpeaker] = useState(null)
 
   useEffect(() => {
     if (!participantName) {
       navigate('/join')
+      return
+    }
+
+    // Set up socket listeners
+    const setupSocketListeners = () => {
+      socketService.onQueueUpdated((queue) => {
+        console.log('Queue updated:', queue)
+        setSpeakingQueue(queue)
+        
+        // Check if current user is in queue
+        const userInQueue = queue.find(item => item.participantName === participantName)
+        setIsInQueue(!!userInQueue)
+      })
+
+      socketService.onParticipantsUpdated((participantsList) => {
+        console.log('Participants updated:', participantsList)
+        setParticipants(participantsList)
+      })
+
+      socketService.onParticipantJoined((data) => {
+        console.log('Participant joined:', data)
+      })
+
+      socketService.onParticipantLeft((data) => {
+        console.log('Participant left:', data)
+      })
+
+      socketService.onNextSpeaker((speaker) => {
+        console.log('Next speaker:', speaker)
+        setCurrentSpeaker(speaker)
+        
+        // Clear current speaker after 5 seconds
+        setTimeout(() => {
+          setCurrentSpeaker(null)
+        }, 5000)
+      })
+
+      socketService.onError((error) => {
+        console.error('Socket error:', error)
+        setError(error.message || 'Connection error')
+      })
+    }
+
+    // Connect if not already connected
+    if (!socketService.isConnected) {
+      try {
+        socketService.connect()
+        setupSocketListeners()
+        setIsConnected(true)
+      } catch (err) {
+        console.error('Failed to connect to socket:', err)
+        setError('Failed to connect to meeting')
+      }
+    } else {
+      setupSocketListeners()
+      setIsConnected(true)
+    }
+
+    // Cleanup on unmount
+    return () => {
+      socketService.removeAllListeners()
     }
   }, [participantName, navigate])
 
-  const joinQueue = (type = 'speak', subtype = null) => {
-    if (isInQueue) return
+  const joinQueue = (type = 'speak') => {
+    if (isInQueue || !isConnected) return
     
-    const newEntry = {
-      id: Date.now(),
-      name: participantName,
-      type,
-      subtype,
-      timestamp: Date.now()
+    try {
+      socketService.joinQueue(type)
+      setShowDirectOptions(false)
+    } catch (err) {
+      console.error('Error joining queue:', err)
+      setError('Failed to join queue')
     }
-    
-    setSpeakingQueue(prev => [...prev, newEntry])
-    setIsInQueue(true)
-    setShowDirectOptions(false)
   }
 
   const leaveQueue = () => {
-    setSpeakingQueue(prev => prev.filter(entry => entry.name !== participantName))
-    setIsInQueue(false)
-  }
-
-  const getQueuePosition = () => {
-    const position = speakingQueue.findIndex(entry => entry.name === participantName)
-    return position >= 0 ? position + 1 : null
-  }
-
-  const formatQueueEntry = (entry) => {
-    if (entry.type === 'direct') {
-      const typeLabels = {
-        process: 'Process Point',
-        info: 'Information',
-        clarification: 'Clarification'
-      }
-      return `${entry.name} (${typeLabels[entry.subtype] || 'Direct Response'})`
+    if (!isInQueue || !isConnected) return
+    
+    try {
+      socketService.leaveQueue()
+    } catch (err) {
+      console.error('Error leaving queue:', err)
+      setError('Failed to leave queue')
     }
-    return entry.name
   }
 
-  if (!participantName) {
-    return null
+  const leaveMeeting = () => {
+    socketService.disconnect()
+    navigate('/')
+  }
+
+  const getQueueTypeDisplay = (type) => {
+    switch (type) {
+      case 'direct-response':
+        return 'Direct Response'
+      case 'point-of-info':
+        return 'Point of Info'
+      case 'clarification':
+        return 'Clarification'
+      default:
+        return 'Speak'
+    }
+  }
+
+  const getQueueTypeColor = (type) => {
+    switch (type) {
+      case 'direct-response':
+        return 'bg-orange-100 text-orange-800'
+      case 'point-of-info':
+        return 'bg-blue-100 text-blue-800'
+      case 'clarification':
+        return 'bg-purple-100 text-purple-800'
+      default:
+        return 'bg-green-100 text-green-800'
+    }
+  }
+
+  if (!isConnected && !error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-purple-600" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Connecting to meeting...</h2>
+          <p className="text-gray-600">Please wait while we connect you to the meeting room.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-8 shadow-lg text-center max-w-md">
+          <div className="bg-red-100 p-4 rounded-full w-16 h-16 mx-auto mb-4">
+            <LogOut className="w-8 h-8 text-red-600 mx-auto" />
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Connection Error</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/join')}
+            className="bg-red-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-100">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">{meetingData.name}</h1>
-              <p className="text-sm text-gray-600">
-                Facilitated by {meetingData.facilitator} • {meetingData.participants} participants
+              <h1 className="text-2xl font-bold text-gray-900">{meetingData.title}</h1>
+              <p className="text-gray-600">
+                Facilitated by {meetingData.facilitator} • Code: {meetingData.code}
               </p>
             </div>
-            <button
-              onClick={() => navigate('/')}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <LogOut className="w-5 h-5 mr-1" />
-              Leave
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center text-gray-600">
+                <Users className="w-5 h-5 mr-2" />
+                <span>{participants.length} participants</span>
+              </div>
+              <button
+                onClick={leaveMeeting}
+                className="flex items-center text-red-600 hover:text-red-700 transition-colors"
+              >
+                <LogOut className="w-5 h-5 mr-2" />
+                Leave
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="container mx-auto px-4 py-6">
-        <div className="max-w-4xl mx-auto grid lg:grid-cols-3 gap-6">
+        {/* Current Speaker Alert */}
+        {currentSpeaker && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-6 mb-8">
+            <div className="flex items-center">
+              <div className="bg-green-100 p-3 rounded-full mr-4">
+                <MessageCircle className="w-6 h-6 text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-green-900">Now Speaking</h3>
+                <p className="text-green-700">
+                  {currentSpeaker.participantName} - {getQueueTypeDisplay(currentSpeaker.type)}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Speaking Queue */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                <Users className="w-5 h-5 mr-2" />
-                Speaking Queue
-              </h2>
-              
-              {meetingData.currentSpeaker && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full mr-3 animate-pulse"></div>
-                    <span className="font-medium text-blue-900">
-                      {meetingData.currentSpeaker} is speaking
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {speakingQueue.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Hand className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No one in queue. Raise your hand to speak!</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {speakingQueue.map((entry, index) => (
-                    <div 
-                      key={entry.id}
-                      className={`flex items-center p-3 rounded-lg border ${
-                        entry.name === participantName 
-                          ? 'bg-green-50 border-green-200' 
-                          : 'bg-gray-50 border-gray-200'
-                      }`}
-                    >
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-sm font-medium text-blue-600 mr-3">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {formatQueueEntry(entry)}
+          <div className="bg-white rounded-2xl p-6 shadow-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Speaking Queue</h2>
+            
+            {speakingQueue.length === 0 ? (
+              <div className="text-center py-8">
+                <Hand className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No one in queue</p>
+                <p className="text-sm text-gray-400">Raise your hand to speak!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {speakingQueue.map((entry, index) => (
+                  <div
+                    key={entry.id}
+                    className={`p-4 rounded-lg border-2 ${
+                      entry.participantName === participantName
+                        ? 'border-purple-300 bg-purple-50'
+                        : 'border-gray-200 bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className="bg-purple-100 text-purple-800 text-sm font-semibold px-3 py-1 rounded-full mr-3">
+                          #{index + 1}
                         </div>
-                        {entry.type === 'direct' && (
-                          <div className="text-xs text-orange-600 font-medium">
-                            Direct Response
-                          </div>
-                        )}
+                        <div>
+                          <p className="font-medium text-gray-900">{entry.participantName}</p>
+                          <span className={`text-xs px-2 py-1 rounded-full ${getQueueTypeColor(entry.type)}`}>
+                            {getQueueTypeDisplay(entry.type)}
+                          </span>
+                        </div>
                       </div>
-                      {entry.name === participantName && (
+                      {entry.participantName === participantName && (
                         <button
                           onClick={leaveQueue}
                           className="text-red-600 hover:text-red-700 text-sm font-medium"
@@ -154,110 +264,82 @@ function MeetingRoom() {
                         </button>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Actions Panel */}
-          <div className="space-y-6">
-            {/* Your Status */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Your Status</h3>
-              <div className="space-y-3">
-                <div className="flex items-center">
-                  <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
-                  <span className="text-sm text-gray-700">Connected as {participantName}</span>
-                </div>
-                {isInQueue && (
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
-                    <span className="text-sm text-gray-700">
-                      Position #{getQueuePosition()} in queue
-                    </span>
+          {/* Actions */}
+          <div className="bg-white rounded-2xl p-6 shadow-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Actions</h2>
+            
+            <div className="space-y-4">
+              {/* Main speak button */}
+              <button
+                onClick={() => joinQueue('speak')}
+                disabled={isInQueue}
+                className={`w-full py-4 px-6 rounded-lg font-semibold transition-colors flex items-center justify-center ${
+                  isInQueue
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-700'
+                }`}
+              >
+                <Hand className="w-5 h-5 mr-2" />
+                {isInQueue ? 'In Queue' : 'Raise Hand to Speak'}
+              </button>
+
+              {/* Direct response options */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowDirectOptions(!showDirectOptions)}
+                  disabled={isInQueue}
+                  className={`w-full py-3 px-6 rounded-lg font-medium transition-colors flex items-center justify-center ${
+                    isInQueue
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <MessageCircle className="w-5 h-5 mr-2" />
+                  Direct Response
+                </button>
+
+                {showDirectOptions && !isInQueue && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                    <button
+                      onClick={() => joinQueue('direct-response')}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                    >
+                      <div className="font-medium text-gray-900">Direct Response</div>
+                      <div className="text-sm text-gray-600">Respond directly to current speaker</div>
+                    </button>
+                    <button
+                      onClick={() => joinQueue('point-of-info')}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
+                    >
+                      <div className="font-medium text-gray-900">Point of Information</div>
+                      <div className="text-sm text-gray-600">Share relevant information</div>
+                    </button>
+                    <button
+                      onClick={() => joinQueue('clarification')}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="font-medium text-gray-900">Clarification</div>
+                      <div className="text-sm text-gray-600">Ask for clarification</div>
+                    </button>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Speaking Actions */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Speaking Actions</h3>
-              
-              {!isInQueue ? (
-                <div className="space-y-3">
-                  <button
-                    onClick={() => joinQueue('speak')}
-                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
-                  >
-                    <Hand className="w-5 h-5 mr-2" />
-                    Raise Hand to Speak
-                  </button>
-                  
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowDirectOptions(!showDirectOptions)}
-                      className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-orange-700 transition-colors flex items-center justify-center"
-                    >
-                      <MessageCircle className="w-5 h-5 mr-2" />
-                      Direct Response
-                    </button>
-                    
-                    {showDirectOptions && (
-                      <div className="absolute top-full left-0 right-0 mt-2 bg-white border rounded-lg shadow-lg z-10">
-                        <button
-                          onClick={() => joinQueue('direct', 'process')}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b"
-                        >
-                          <div className="font-medium">Process Point</div>
-                          <div className="text-sm text-gray-600">Question about procedure</div>
-                        </button>
-                        <button
-                          onClick={() => joinQueue('direct', 'info')}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b"
-                        >
-                          <div className="font-medium">Information</div>
-                          <div className="text-sm text-gray-600">Share relevant info</div>
-                        </button>
-                        <button
-                          onClick={() => joinQueue('direct', 'clarification')}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50"
-                        >
-                          <div className="font-medium">Clarification</div>
-                          <div className="text-sm text-gray-600">Ask for clarification</div>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                    <p className="text-green-800 font-medium">You're in the queue!</p>
-                    <p className="text-green-600 text-sm">Position #{getQueuePosition()}</p>
-                  </div>
-                  <button
-                    onClick={leaveQueue}
-                    className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-red-700 transition-colors"
-                  >
-                    Leave Queue
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Meeting Info */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4 flex items-center">
-                <Info className="w-5 h-5 mr-2" />
-                Meeting Info
-              </h3>
-              <div className="space-y-2 text-sm text-gray-600">
-                <div>Code: <span className="font-mono font-bold">{meetingId}</span></div>
-                <div>Participants: {meetingData.participants}</div>
-                <div>Queue: {speakingQueue.length} waiting</div>
-              </div>
+            {/* Participant info */}
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <p className="text-sm text-gray-600">
+                <strong>You:</strong> {participantName}
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                <strong>Status:</strong> {isInQueue ? 'In speaking queue' : 'Ready to participate'}
+              </p>
             </div>
           </div>
         </div>

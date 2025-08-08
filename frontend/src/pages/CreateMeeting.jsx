@@ -1,42 +1,58 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Users, Copy, QrCode as QrCodeIcon } from 'lucide-react'
+import { ArrowLeft, Users, Copy, QrCode as QrCodeIcon, Loader2 } from 'lucide-react'
 import QRCode from 'qrcode'
+import apiService from '../services/api'
 
 function CreateMeeting() {
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [meetingData, setMeetingData] = useState({
     name: '',
     facilitatorName: '',
+    meetingCode: '',
     meetingId: '',
     shareableLink: ''
   })
   const [qrCodeUrl, setQrCodeUrl] = useState('')
 
-  const generateMeetingId = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase()
-  }
-
   const handleCreateMeeting = async (e) => {
     e.preventDefault()
-    const meetingId = generateMeetingId()
-    const shareableLink = `${window.location.origin}/join?code=${meetingId}`
+    setLoading(true)
+    setError('')
     
-    // Generate QR Code
     try {
-      const qrUrl = await QRCode.toDataURL(shareableLink)
-      setQrCodeUrl(qrUrl)
-    } catch (err) {
-      console.error('Error generating QR code:', err)
-    }
+      // Call the real API to create meeting
+      const response = await apiService.createMeeting(
+        meetingData.facilitatorName,
+        meetingData.name
+      )
+      
+      const shareableLink = `${window.location.origin}/join?code=${response.meetingCode}`
+      
+      // Generate QR Code
+      try {
+        const qrUrl = await QRCode.toDataURL(shareableLink)
+        setQrCodeUrl(qrUrl)
+      } catch (err) {
+        console.error('Error generating QR code:', err)
+      }
 
-    setMeetingData(prev => ({
-      ...prev,
-      meetingId,
-      shareableLink
-    }))
-    setStep(2)
+      setMeetingData(prev => ({
+        ...prev,
+        meetingCode: response.meetingCode,
+        meetingId: response.meetingId,
+        shareableLink
+      }))
+      setStep(2)
+    } catch (err) {
+      console.error('Error creating meeting:', err)
+      setError('Failed to create meeting. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const copyToClipboard = (text) => {
@@ -45,10 +61,11 @@ function CreateMeeting() {
   }
 
   const startMeeting = () => {
-    navigate(`/facilitate/${meetingData.meetingId}`, {
+    navigate(`/facilitate/${meetingData.meetingCode}`, {
       state: { 
         facilitatorName: meetingData.facilitatorName,
-        meetingName: meetingData.name 
+        meetingName: meetingData.name,
+        meetingCode: meetingData.meetingCode
       }
     })
   }
@@ -79,6 +96,12 @@ function CreateMeeting() {
               </div>
 
               <form onSubmit={handleCreateMeeting} className="space-y-6">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Meeting Name
@@ -86,9 +109,10 @@ function CreateMeeting() {
                   <input
                     type="text"
                     required
+                    disabled={loading}
                     value={meetingData.name}
                     onChange={(e) => setMeetingData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
                     placeholder="e.g., Weekly Team Meeting"
                   />
                 </div>
@@ -100,18 +124,27 @@ function CreateMeeting() {
                   <input
                     type="text"
                     required
+                    disabled={loading}
                     value={meetingData.facilitatorName}
                     onChange={(e) => setMeetingData(prev => ({ ...prev, facilitatorName: e.target.value }))}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
                     placeholder="Your name"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                  disabled={loading}
+                  className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center justify-center"
                 >
-                  Create Meeting
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Creating Meeting...
+                    </>
+                  ) : (
+                    'Create Meeting'
+                  )}
                 </button>
               </form>
             </div>
@@ -135,10 +168,10 @@ function CreateMeeting() {
                   </label>
                   <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-6">
                     <div className="text-4xl font-bold text-blue-600 mb-2">
-                      {meetingData.meetingId}
+                      {meetingData.meetingCode}
                     </div>
                     <button
-                      onClick={() => copyToClipboard(meetingData.meetingId)}
+                      onClick={() => copyToClipboard(meetingData.meetingCode)}
                       className="flex items-center justify-center mx-auto text-sm text-gray-600 hover:text-gray-900"
                     >
                       <Copy className="w-4 h-4 mr-1" />

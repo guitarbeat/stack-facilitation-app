@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Users, LogIn } from 'lucide-react'
+import { ArrowLeft, Users, LogIn, Loader2 } from 'lucide-react'
+import apiService from '../services/api'
+import socketService from '../services/socket'
 
 function JoinMeeting() {
   const navigate = useNavigate()
@@ -10,20 +12,47 @@ function JoinMeeting() {
     participantName: ''
   })
   const [isJoining, setIsJoining] = useState(false)
+  const [error, setError] = useState('')
 
   const handleJoinMeeting = async (e) => {
     e.preventDefault()
     setIsJoining(true)
+    setError('')
 
-    // Simulate joining process
-    setTimeout(() => {
+    try {
+      // First, validate the meeting exists
+      const meetingInfo = await apiService.getMeeting(formData.meetingCode)
+      
+      // Connect to socket
+      socketService.connect()
+      
+      // Join the meeting via socket
+      const joinResult = await socketService.joinMeeting(
+        formData.meetingCode,
+        formData.participantName,
+        false // not facilitator
+      )
+      
+      console.log('Successfully joined meeting:', joinResult)
+      
+      // Navigate to meeting room
       navigate(`/meeting/${formData.meetingCode}`, {
         state: { 
           participantName: formData.participantName,
+          meetingInfo: joinResult.meeting,
           isParticipant: true 
         }
       })
-    }, 1000)
+    } catch (err) {
+      console.error('Error joining meeting:', err)
+      if (err.message === 'Meeting not found') {
+        setError('Meeting not found. Please check the code and try again.')
+      } else {
+        setError('Failed to join meeting. Please try again.')
+      }
+    } finally {
+      setIsJoining(false)
+    }
   }
 
   return (
@@ -51,6 +80,12 @@ function JoinMeeting() {
             </div>
 
             <form onSubmit={handleJoinMeeting} className="space-y-6">
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-red-600 text-sm">{error}</p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Meeting Code
@@ -58,12 +93,13 @@ function JoinMeeting() {
                 <input
                   type="text"
                   required
+                  disabled={isJoining}
                   value={formData.meetingCode}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
                     meetingCode: e.target.value.toUpperCase() 
                   }))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-2xl font-bold tracking-wider"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-center text-2xl font-bold tracking-wider disabled:bg-gray-100"
                   placeholder="ABC123"
                   maxLength={6}
                 />
@@ -76,12 +112,13 @@ function JoinMeeting() {
                 <input
                   type="text"
                   required
+                  disabled={isJoining}
                   value={formData.participantName}
                   onChange={(e) => setFormData(prev => ({ 
                     ...prev, 
                     participantName: e.target.value 
                   }))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100"
                   placeholder="Enter your name"
                 />
               </div>
@@ -89,13 +126,13 @@ function JoinMeeting() {
               <button
                 type="submit"
                 disabled={isJoining}
-                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:bg-green-400 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {isJoining ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Joining...
-                  </div>
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Joining Meeting...
+                  </>
                 ) : (
                   'Join Meeting'
                 )}

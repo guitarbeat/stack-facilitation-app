@@ -1,277 +1,351 @@
 import { useState, useEffect } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
-import { Users, Play, Pause, SkipForward, Settings, LogOut, Crown } from 'lucide-react'
+import { Users, Play, Pause, SkipForward, Settings, LogOut, Crown, Loader2, MessageCircle } from 'lucide-react'
+import socketService from '../services/socket'
 
 function FacilitatorView() {
   const { meetingId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { facilitatorName, meetingName } = location.state || {}
+  const { facilitatorName, meetingName, meetingCode } = location.state || {}
   
   const [meetingData, setMeetingData] = useState({
-    name: meetingName || 'Meeting',
+    code: meetingCode || meetingId,
+    title: meetingName || 'Meeting',
     facilitator: facilitatorName || 'Facilitator',
-    participants: 3,
     isActive: true,
     currentSpeaker: null
   })
   
-  const [speakingQueue, setSpeakingQueue] = useState([
-    { id: 1, name: 'Sarah Chen', type: 'speak', timestamp: Date.now() - 30000 },
-    { id: 2, name: 'Mike Rodriguez', type: 'direct', subtype: 'clarification', timestamp: Date.now() - 15000 },
-    { id: 3, name: 'Emma Thompson', type: 'speak', timestamp: Date.now() - 5000 }
-  ])
-  
-  const [participants, setParticipants] = useState([
-    { id: 1, name: 'Sarah Chen', joinedAt: Date.now() - 300000 },
-    { id: 2, name: 'Mike Rodriguez', joinedAt: Date.now() - 240000 },
-    { id: 3, name: 'Emma Thompson', joinedAt: Date.now() - 180000 }
-  ])
+  const [participants, setParticipants] = useState([])
+  const [speakingQueue, setSpeakingQueue] = useState([])
+  const [isConnected, setIsConnected] = useState(false)
+  const [error, setError] = useState('')
+  const [currentSpeaker, setCurrentSpeaker] = useState(null)
 
   useEffect(() => {
-    if (!facilitatorName) {
+    if (!facilitatorName || !meetingCode) {
       navigate('/create')
+      return
     }
-  }, [facilitatorName, navigate])
+
+    // Set up socket listeners
+    const setupSocketListeners = () => {
+      socketService.onQueueUpdated((queue) => {
+        console.log('Queue updated:', queue)
+        setSpeakingQueue(queue)
+      })
+
+      socketService.onParticipantsUpdated((participantsList) => {
+        console.log('Participants updated:', participantsList)
+        setParticipants(participantsList)
+      })
+
+      socketService.onParticipantJoined((data) => {
+        console.log('Participant joined:', data)
+      })
+
+      socketService.onParticipantLeft((data) => {
+        console.log('Participant left:', data)
+      })
+
+      socketService.onNextSpeaker((speaker) => {
+        console.log('Next speaker:', speaker)
+        setCurrentSpeaker(speaker)
+        
+        // Clear current speaker after 10 seconds for facilitator
+        setTimeout(() => {
+          setCurrentSpeaker(null)
+        }, 10000)
+      })
+
+      socketService.onError((error) => {
+        console.error('Socket error:', error)
+        setError(error.message || 'Connection error')
+      })
+    }
+
+    // Connect and join as facilitator
+    const connectAsFacilitator = async () => {
+      try {
+        if (!socketService.isConnected) {
+          socketService.connect()
+        }
+        
+        setupSocketListeners()
+        
+        // Join meeting as facilitator
+        await socketService.joinMeeting(meetingCode, facilitatorName, true)
+        setIsConnected(true)
+      } catch (err) {
+        console.error('Failed to connect as facilitator:', err)
+        setError('Failed to connect to meeting')
+      }
+    }
+
+    connectAsFacilitator()
+
+    // Cleanup on unmount
+    return () => {
+      socketService.removeAllListeners()
+    }
+  }, [facilitatorName, meetingCode, navigate])
 
   const nextSpeaker = () => {
-    if (speakingQueue.length === 0) return
+    if (speakingQueue.length === 0 || !isConnected) return
     
-    const currentSpeaker = speakingQueue[0]
-    setMeetingData(prev => ({ ...prev, currentSpeaker: currentSpeaker.name }))
-    setSpeakingQueue(prev => prev.slice(1))
+    try {
+      socketService.nextSpeaker()
+    } catch (err) {
+      console.error('Error calling next speaker:', err)
+      setError('Failed to call next speaker')
+    }
   }
 
   const finishSpeaking = () => {
-    setMeetingData(prev => ({ ...prev, currentSpeaker: null }))
+    setCurrentSpeaker(null)
   }
 
-  const removeFromQueue = (entryId) => {
-    setSpeakingQueue(prev => prev.filter(entry => entry.id !== entryId))
+  const leaveMeeting = () => {
+    socketService.disconnect()
+    navigate('/')
   }
 
-  const moveToTop = (entryId) => {
-    setSpeakingQueue(prev => {
-      const entry = prev.find(e => e.id === entryId)
-      const others = prev.filter(e => e.id !== entryId)
-      return [entry, ...others]
-    })
-  }
-
-  const formatQueueEntry = (entry) => {
-    if (entry.type === 'direct') {
-      const typeLabels = {
-        process: 'Process Point',
-        info: 'Information',
-        clarification: 'Clarification'
-      }
-      return `${entry.name} (${typeLabels[entry.subtype] || 'Direct Response'})`
+  const getQueueTypeDisplay = (type) => {
+    switch (type) {
+      case 'direct-response':
+        return 'Direct Response'
+      case 'point-of-info':
+        return 'Point of Info'
+      case 'clarification':
+        return 'Clarification'
+      default:
+        return 'Speak'
     }
-    return entry.name
   }
 
-  const shareableLink = `${window.location.origin}/join?code=${meetingId}`
+  const getQueueTypeColor = (type) => {
+    switch (type) {
+      case 'direct-response':
+        return 'bg-orange-100 text-orange-800'
+      case 'point-of-info':
+        return 'bg-blue-100 text-blue-800'
+      case 'clarification':
+        return 'bg-purple-100 text-purple-800'
+      default:
+        return 'bg-green-100 text-green-800'
+    }
+  }
 
-  if (!facilitatorName) {
-    return null
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  if (!isConnected && !error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-8 shadow-lg text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Setting up meeting...</h2>
+          <p className="text-gray-600">Please wait while we prepare your facilitator view.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-8 shadow-lg text-center max-w-md">
+          <div className="bg-red-100 p-4 rounded-full w-16 h-16 mx-auto mb-4">
+            <LogOut className="w-8 h-8 text-red-600 mx-auto" />
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Connection Error</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/create')}
+            className="bg-red-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg mb-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <div className="bg-yellow-100 p-2 rounded-lg mr-3">
-                <Crown className="w-6 h-6 text-yellow-600" />
+              <div className="bg-blue-100 p-3 rounded-full mr-4">
+                <Crown className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">{meetingData.name}</h1>
-                <p className="text-sm text-gray-600">
-                  Facilitator: {meetingData.facilitator} • {meetingData.participants} participants
+                <h1 className="text-2xl font-bold text-gray-900">{meetingData.title}</h1>
+                <p className="text-gray-600">
+                  Facilitator View • Code: {meetingData.code}
                 </p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <div className="text-sm text-gray-600">Meeting Code</div>
-                <div className="font-mono font-bold text-lg">{meetingId}</div>
+              <div className="flex items-center text-gray-600">
+                <Users className="w-5 h-5 mr-2" />
+                <span>{participants.length} participants</span>
               </div>
               <button
-                onClick={() => navigate('/')}
-                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+                onClick={leaveMeeting}
+                className="flex items-center text-red-600 hover:text-red-700 transition-colors"
               >
-                <LogOut className="w-5 h-5 mr-1" />
+                <LogOut className="w-5 h-5 mr-2" />
                 End Meeting
               </button>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="container mx-auto px-4 py-6">
-        <div className="grid lg:grid-cols-4 gap-6">
-          {/* Current Speaker */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Current Speaker</h2>
-              
-              {meetingData.currentSpeaker ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-4 h-4 bg-blue-500 rounded-full mr-3 animate-pulse"></div>
-                      <span className="text-xl font-medium text-blue-900">
-                        {meetingData.currentSpeaker} is speaking
-                      </span>
-                    </div>
-                    <button
-                      onClick={finishSpeaking}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Finish Speaking
-                    </button>
-                  </div>
+        {/* Current Speaker Alert */}
+        {currentSpeaker && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-6 mb-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="bg-green-100 p-3 rounded-full mr-4">
+                  <MessageCircle className="w-6 h-6 text-green-600" />
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Users className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-lg">No one is currently speaking</p>
-                  {speakingQueue.length > 0 && (
-                    <button
-                      onClick={nextSpeaker}
-                      className="mt-4 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors flex items-center mx-auto"
-                    >
-                      <Play className="w-5 h-5 mr-2" />
-                      Next Speaker
-                    </button>
-                  )}
+                <div>
+                  <h3 className="text-lg font-semibold text-green-900">Now Speaking</h3>
+                  <p className="text-green-700">
+                    {currentSpeaker.participantName} - {getQueueTypeDisplay(currentSpeaker.type)}
+                  </p>
                 </div>
-              )}
-            </div>
-
-            {/* Speaking Queue Management */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Speaking Queue</h2>
-                {speakingQueue.length > 0 && !meetingData.currentSpeaker && (
-                  <button
-                    onClick={nextSpeaker}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    Next Speaker
-                  </button>
-                )}
               </div>
-              
-              {speakingQueue.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>Queue is empty</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {speakingQueue.map((entry, index) => (
-                    <div 
-                      key={entry.id}
-                      className="flex items-center p-4 rounded-lg border bg-gray-50"
-                    >
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-sm font-medium text-blue-600 mr-4">
-                        {index + 1}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">
-                          {formatQueueEntry(entry)}
-                        </div>
-                        {entry.type === 'direct' && (
-                          <div className="text-xs text-orange-600 font-medium">
-                            Direct Response
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-500">
-                          {new Date(entry.timestamp).toLocaleTimeString()}
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        {index > 0 && (
-                          <button
-                            onClick={() => moveToTop(entry.id)}
-                            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                          >
-                            Move Up
-                          </button>
-                        )}
-                        <button
-                          onClick={() => removeFromQueue(entry.id)}
-                          className="text-red-600 hover:text-red-700 text-sm font-medium"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <button
+                onClick={finishSpeaking}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors"
+              >
+                Finish Speaking
+              </button>
             </div>
           </div>
+        )}
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Meeting Controls */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Meeting Controls</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Status</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    meetingData.isActive 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {meetingData.isActive ? 'Active' : 'Paused'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">Queue</span>
-                  <span className="text-sm font-medium">{speakingQueue.length} waiting</span>
-                </div>
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Speaking Queue */}
+          <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Speaking Queue</h2>
+              <button
+                onClick={nextSpeaker}
+                disabled={speakingQueue.length === 0}
+                className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
+                  speakingQueue.length === 0
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <SkipForward className="w-4 h-4 mr-2" />
+                Next Speaker
+              </button>
             </div>
-
-            {/* Share Meeting */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Share Meeting</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Meeting Code</label>
-                  <div className="bg-gray-50 border rounded-lg p-3 text-center">
-                    <div className="font-mono font-bold text-lg">{meetingId}</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => navigator.clipboard.writeText(shareableLink)}
-                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                >
-                  Copy Share Link
-                </button>
+            
+            {speakingQueue.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg">No one in queue</p>
+                <p className="text-sm text-gray-400">Participants can raise their hand to join the queue</p>
               </div>
-            </div>
-
-            {/* Participants */}
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">
-                Participants ({participants.length})
-              </h3>
-              <div className="space-y-2">
-                {participants.map(participant => (
-                  <div key={participant.id} className="flex items-center">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
-                    <span className="text-sm text-gray-700">{participant.name}</span>
+            ) : (
+              <div className="space-y-4">
+                {speakingQueue.map((entry, index) => (
+                  <div
+                    key={entry.id}
+                    className={`p-4 rounded-lg border-2 ${
+                      index === 0
+                        ? 'border-blue-300 bg-blue-50'
+                        : 'border-gray-200 bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className={`text-sm font-semibold px-3 py-1 rounded-full mr-3 ${
+                          index === 0
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          #{index + 1}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{entry.participantName}</p>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <span className={`text-xs px-2 py-1 rounded-full ${getQueueTypeColor(entry.type)}`}>
+                              {getQueueTypeDisplay(entry.type)}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {formatTime(entry.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {index === 0 && (
+                        <div className="flex items-center text-blue-600">
+                          <Play className="w-4 h-4 mr-1" />
+                          <span className="text-sm font-medium">Next</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Participants */}
+          <div className="bg-white rounded-2xl p-6 shadow-lg">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Participants</h2>
+            
+            {participants.length === 0 ? (
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No participants yet</p>
+                <p className="text-sm text-gray-400">Share the meeting code to invite people</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {participants.map((participant) => (
+                  <div
+                    key={participant.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-gray-50"
+                  >
+                    <div className="flex items-center">
+                      {participant.isFacilitator && (
+                        <Crown className="w-4 h-4 text-yellow-600 mr-2" />
+                      )}
+                      <div>
+                        <p className="font-medium text-gray-900">{participant.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {participant.isFacilitator ? 'Facilitator' : 'Participant'}
+                        </p>
+                      </div>
+                    </div>
+                    {participant.isInQueue && (
+                      <div className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
+                        In Queue
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Meeting Info */}
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <div className="space-y-2 text-sm text-gray-600">
+                <p><strong>Meeting Code:</strong> {meetingData.code}</p>
+                <p><strong>Facilitator:</strong> {meetingData.facilitator}</p>
+                <p><strong>Status:</strong> Active</p>
               </div>
             </div>
           </div>
