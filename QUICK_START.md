@@ -1,110 +1,33 @@
-# Quick Start Guide
+# Quick Start
 
-Get the Stack Facilitation App running locally in minutes!
+Get the Stack Facilitation App running locally in minutes.
 
 ## Prerequisites
+- Node.js 18+
 
-- Node.js 20+ 
-- PostgreSQL 15+
-- pnpm (recommended) or npm
-
-## 🚀 Quick Setup
-
-### 1. Clone and Install
-
+## 1) Start the backend
 ```bash
-git clone https://github.com/guitarbeat/stack-facilitation-app.git
-cd stack-facilitation-app
-
-# Install backend dependencies
-cd backend
+cd simple-backend
 npm install
-
-# Install frontend dependencies  
-cd ../frontend
-pnpm install
+npm start   # http://localhost:3000
 ```
 
-### 2. Database Setup
-
+## 2) Start the frontend
 ```bash
-# Start PostgreSQL (varies by system)
-# macOS with Homebrew:
-brew services start postgresql
-
-# Ubuntu/Debian:
-sudo systemctl start postgresql
-
-# Create database
-createdb stack_facilitation
-
-# Set up environment
-cd ../backend
-cp .env.example .env
-# Edit .env with your database URL
-```
-
-### 3. Initialize Database
-
-```bash
-# Generate Prisma client
-npx prisma generate
-
-# Run migrations
-npx prisma migrate dev
-
-# Optional: Seed with sample data
-npx prisma db seed
-```
-
-### 4. Start Development Servers
-
-```bash
-# Terminal 1 - Backend
-cd backend
-npm run dev
-
-# Terminal 2 - Frontend  
 cd frontend
-pnpm dev
+npm install
+# Backend API URL for dev
+echo "VITE_API_URL=http://localhost:3000" > .env
+npm run dev   # http://localhost:5173
 ```
 
-### 5. Open Your Browser
+## 3) Open your browser
+- Visit http://localhost:5173
+- Create a meeting → Share the 6-character code or QR
 
-Visit `http://localhost:5173` to see the app!
-
-## 🐳 Docker Quick Start
-
-Even faster with Docker:
-
-```bash
-git clone https://github.com/guitarbeat/stack-facilitation-app.git
-cd stack-facilitation-app
-
-# Start everything
-docker-compose up -d
-
-# Visit http://localhost:3001
-```
-
-## 🎯 First Meeting
-
-1. Click "Create Meeting"
-2. Fill in meeting details
-3. Share the 6-character PIN with participants
-4. Start facilitating!
-
-## 📚 Next Steps
-
-- Read the [README](README.md) for detailed documentation
-- Check out the [Facilitation Guide](docs/FACILITATION_GUIDE.md)
-- Review the [Moderation Guide](docs/MODERATION_GUIDE.md)
-
-## 🆘 Need Help?
-
-- Check the [Issues](https://github.com/guitarbeat/stack-facilitation-app/issues) page
-- Read the full documentation in the `docs/` folder
-- Review the deployment options in `deploy/`
-
-Happy facilitating! 🎉
+## Next steps
+- Full README: `README.md`
+- Facilitation guide: `docs/FACILITATION_GUIDE.md`
+- Moderation guide: `docs/MODERATION_GUIDE.md`
+- Deployment: `RENDER_DEPLOYMENT.md`
 
