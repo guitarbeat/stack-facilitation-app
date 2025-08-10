@@ -1,54 +1,35 @@
-# Deployment Strategy for Simplified Stack Facilitation App
+# Deployment Strategy for the Simplified Stack Facilitation App
 
 ## Current Situation
-You have existing Render services set up:
-- ✅ **Database**: PostgreSQL (can keep for future)
-- ❌ **Backend**: Complex Node.js/TypeScript (has errors, not needed for now)
-- ❌ **Frontend**: Complex React app (broken styling)
+You have a simplified architecture in this repository:
+- ✅ `frontend/` – Current React + Vite app
+- ✅ `simple-backend/` – Current Express + Socket.io server
+- 🗂️ `frontend-old/` – Legacy complex frontend (kept for reference)
+- ⚠️ Legacy artifacts (`render.yaml`, `docker-compose.yml`, `Dockerfile`) target an older full-stack that is not in use
 
-## Recommended Approach: **Render** (Easiest)
+## Recommended Platform: Render
+- Easy to host a Node backend and a static frontend
+- Free tier is sufficient for testing
+- See `RENDER_DEPLOYMENT.md` for exact settings
 
-### Why Render over Vercel?
-1. **You're already set up** - GitHub connected, services configured
-2. **Simple replacement** - Just update the frontend service
-3. **Future-ready** - Easy to add backend later
-4. **No migration** - Keep your existing setup
+## Deployment Plan
+**Option 1: Deploy to Render (Recommended)**
+- Backend: deploy `simple-backend/` as a Node Web Service (`npm install`, `npm start`)
+- Frontend: deploy `frontend/` as a Static Site (`npm install && npm run build`, publish `dist/`)
+- Frontend env: `VITE_API_URL=https://<your-backend>.onrender.com`
+- Backend env (optional): `FRONTEND_URL=https://<your-frontend>.onrender.com`
 
-### Deployment Plan
+**Option 2: Other Hosts**
+- Any provider that supports a Node web service (backend) + static hosting (frontend)
 
-**Option 1: Update Existing Render Service (Recommended)**
-- Replace frontend code with simplified version
-- Keep same build settings: `pnpm install && pnpm build`
-- Auto-deploy will trigger when we push to GitHub
-- Database stays for future use
-
-**Option 2: Fresh Vercel Deploy**
-- Would need new setup and configuration
-- Good for static sites, but Render is already working
-
-## What to Do with Old Complex Version
-
-### Keep for Reference
-- **frontend-old/**: Complex React app (backed up)
-- **backend/**: Complex Node.js backend (keep for future features)
-- **Database**: Keep running (free tier, useful for later)
-
-### Benefits of Keeping Old Version
-- Can reference complex features later
-- Database schema is already set up
-- Easy to switch back if needed
-- Learn from the complex implementation
-
-## Next Steps
-1. ✅ Push simplified frontend to GitHub
-2. ✅ Render auto-deploys the new version
-3. ✅ Test the clean, simple interface
-4. 🔄 Add simple backend later if needed (Socket.io for real-time)
+## What to Do with the Old Stack
+- Keep `frontend-old/` for ideas and code reference
+- Ignore or archive root-level legacy infra files that target the old stack
 
 ## Future Roadmap
-- **Phase 1**: Simple static frontend (current)
-- **Phase 2**: Add simple Socket.io backend for real-time
-- **Phase 3**: Consider advanced features from old version if needed
+- Phase 1: Current simple real-time queue (this repo)
+- Phase 2: Persistence and additional features as needed
+- Phase 3: Revisit advanced capabilities from legacy implementation where valuable
 
-**Recommendation: Use Render - it's already set up and will "just work"!** 🚀
+**Recommendation:** Use Render for fast, reliable deployment, and iterate from there. 🚀
 
