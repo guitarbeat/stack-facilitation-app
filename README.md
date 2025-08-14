@@ -76,7 +76,7 @@ Queue types supported: `speak`, `direct-response`, `point-of-info`, `clarificati
 ## ☁️ Deployment
 
 - Recommended: Render (free-tier friendly)
-- Follow the updated deployment guide: `RENDER_DEPLOYMENT.md`
+- Follow the updated deployment guide: `docs/DEPLOYMENT.md`
 
 Notes:
 - The root `render.yaml` and `docker-compose.yml` target a legacy stack and are not compatible with the current `simple-backend + frontend` setup.
@@ -88,7 +88,7 @@ Notes:
 
 - Facilitation guide: `docs/FACILITATION_GUIDE.md`
 - Moderation guide: `docs/MODERATION_GUIDE.md`
-- Render deployment: `RENDER_DEPLOYMENT.md`
+- Deployment: `docs/DEPLOYMENT.md`
 
 ## 🤝 Contributing
 

@@ -29,5 +29,5 @@ npm run dev   # http://localhost:5173
 - Full README: `README.md`
 - Facilitation guide: `docs/FACILITATION_GUIDE.md`
 - Moderation guide: `docs/MODERATION_GUIDE.md`
-- Deployment: `RENDER_DEPLOYMENT.md`
+- Deployment: `docs/DEPLOYMENT.md`
 
