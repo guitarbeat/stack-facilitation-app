@@ -10,7 +10,7 @@ You have a simplified architecture in this repository:
 ## Recommended Platform: Render
 - Easy to host a Node backend and a static frontend
 - Free tier is sufficient for testing
-- See `RENDER_DEPLOYMENT.md` for exact settings
+- See `docs/DEPLOYMENT.md` for exact settings
 
 ## Deployment Plan
 **Option 1: Deploy to Render (Recommended)**
